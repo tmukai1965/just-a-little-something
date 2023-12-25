@@ -11,7 +11,7 @@ static FspTimer fsp_timer;
 // 1. 40～103をのみ発音する(64音階、6ビット)  0..39,104..127の ノートオン/ノートオフを無視する
 // 2. 12音全て発音中のノートオンを無視する  それを覚えておいて、ノートオフが出てきたら無視する
 
-#define N_NOTE  21  // 最大同時発音数 21
+#define N_NOTE  16  // 最大同時発音数 21
 
 typedef struct {
   int8_t   vel;     // ベロシティ（音の強さ）
@@ -54,6 +54,13 @@ void timerCallback() {    // タイマ割り込み  32us(=31.25KHz)
   static uint8_t tick32us;
   static uint16_t Envelope;
 
+  /////////////////////////////////////////////////////////////// debug
+  unsigned long sta1 = micros();
+  unsigned long sta2 = micros();
+  unsigned long sta = max(sta1, sta2);
+  static long long cycle_max = 0;
+  /////////////////////////////////////////////////////////////// debug
+
   if((++tick32us == 0) && (DeltaTime != 0)) DeltaTime--;  // 32us*256=8.192[ms]
   int8_t env_dec = (Envelope++ == 0xC00);                 // 65.536msごとにTRUEになる
   if(env_dec) Envelope = 0;
@@ -69,6 +76,17 @@ void timerCallback() {    // タイマ割り込み  32us(=31.25KHz)
   }
 
   fsp_timer.set_duty_cycle(out, CHANNEL_B);   // D1==CHANNEL_A(==0), D0==CHANNEL_B(==1)
+
+  /////////////////////////////////////////////////////////////// debug
+  unsigned long fin1 = micros();
+  unsigned long fin2 = micros();
+  unsigned long fin  = max(fin1, fin2);
+  if(fin1 > fin2) return;
+  if(cycle_max < (fin2-fin1)) {
+    cycle_max = fin2-fin1;
+    //Serial.println(cycle_max);
+  }
+  /////////////////////////////////////////////////////////////// debug
 }
 
 //----------------------------------------------------------------------
@@ -109,7 +127,10 @@ void play_score(void) {
   const uint8_t *p = Score;
   const uint8_t *pe = Score + sizeof(Score);
 
+  static int aaa=0; /////////////////////////////////////////// LED blink
   while (p < pe) {
+    digitalWrite(LED_BUILTIN, aaa = 1-aaa); /////////////////// LED blink
+
     while(0 < DeltaTime);           // DeltaTime待ち
 
     int8_t c = *p++;                // 取り出す
@@ -155,7 +176,9 @@ void note_off_all(void) {
 }
 
 void setup() {
-  //Serial.begin(115200); while(!Serial); Serial.println(); // for debug
+  //Serial.begin(2000000); while(!Serial); Serial.println(); //// for debug
+  pinMode(LED_BUILTIN, OUTPUT); /////////////////////////////// LED blink
+
   init_hard();
 
   for(;;) {
