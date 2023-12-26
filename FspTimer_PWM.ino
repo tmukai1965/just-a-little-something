@@ -1,6 +1,10 @@
+const int USE_LED_BLINKER = 1;
+void LED_BLINKER() { if(USE_LED_BLINKER) digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN)); }
+
+
 #include <FspTimer.h>
 #include <AGTimerR4.h>
-#define INTERVAL_SAMPLING 32  // micro sec
+#define INTERVAL_MICRO_SEC 32  // micro sec
 
 static FspTimer fsp_timer;
 
@@ -39,27 +43,22 @@ const uint8_t Score[] = {
 volatile uint8_t DeltaTime;
 
 TUnit Unit[N_NOTE];           // 7バイト x 同時発音数
-const uint16_t dx_array[] = { // 8オクターブ
-  137, 145, 153, 163, 172, 183, 193, 205, 217, 230, 244, 258, 
-  274, 290, 307, 326, 345, 366, 387, 411, 435, 461, 488, 517, 
-  548, 581, 615, 652, 691, 732, 775, 822, 870, 922, 977, 1035, 
-  1097, 1162, 1231, 1304, 1382, 1464, 1551, 1644, 1741, 1845, 1955, 2071, 
-  2194, 2325, 2463, 2609, 2765, 2929, 3103, 3288, 3483, 3691, 3910, 4143, 
-  4389, 4650, 4927, 5219, 5530, 5859, 6207, 6576, 6967, 7382, 7821, 8286, 
-  8778, 9300, 9854, 10439, 11060, 11718, 12415, 13153, 13935, 14764, 15642, 16572, 
-  17557, 18601, 19708, 20879, 22121, 23436, 24830, 26306, 27871, 29528, 31284, 33144
+const uint16_t dx_array[] = { // note: 0--127
+     34,    36,    38,    41,    43,    46,    48,    51,    54,    58,    61,    65,
+     69,    73,    77,    82,    86,    92,    97,   103,   109,   115,   122,   129,
+    137,   145,   154,   163,   173,   183,   194,   206,   218,   231,   244,   259,
+    274,   291,   308,   326,   346,   366,   388,   411,   435,   461,   489,   518,
+    549,   581,   616,   652,   691,   732,   776,   822,   871,   923,   978,  1036,
+   1097,  1163,  1232,  1305,  1383,  1465,  1552,  1644,  1742,  1845,  1955,  2071,
+   2195,  2325,  2463,  2610,  2765,  2930,  3104,  3288,  3484,  3691,  3910,  4143,
+   4389,  4650,  4927,  5220,  5530,  5859,  6207,  6577,  6968,  7382,  7821,  8286,
+   8779,  9301,  9854, 10440, 11060, 11718, 12415, 13153, 13935, 14764, 15642, 16572,
+  17557, 18601, 19707, 20879, 22121, 23436, 24830, 26306, 27871, 29528, 31284, 33144,
 };
 
 void timerCallback() {    // タイマ割り込み  32us(=31.25KHz)
   static uint8_t tick32us;
   static uint16_t Envelope;
-
-  /////////////////////////////////////////////////////////////// debug
-  unsigned long sta1 = micros();
-  unsigned long sta2 = micros();
-  unsigned long sta = max(sta1, sta2);
-  static long long cycle_max = 0;
-  /////////////////////////////////////////////////////////////// debug
 
   if((++tick32us == 0) && (DeltaTime != 0)) DeltaTime--;  // 32us*256=8.192[ms]
   int8_t env_dec = (Envelope++ == 0xC00);                 // 65.536msごとにTRUEになる
@@ -75,18 +74,8 @@ void timerCallback() {    // タイマ割り込み  32us(=31.25KHz)
     if(env_dec && (0 < Unit[i].vel)) Unit[i].vel--;
   }
 
-  fsp_timer.set_duty_cycle(out, CHANNEL_B);   // D1==CHANNEL_A(==0), D0==CHANNEL_B(==1)
-
-  /////////////////////////////////////////////////////////////// debug
-  unsigned long fin1 = micros();
-  unsigned long fin2 = micros();
-  unsigned long fin  = max(fin1, fin2);
-  if(fin1 > fin2) return;
-  if(cycle_max < (fin2-fin1)) {
-    cycle_max = fin2-fin1;
-    //Serial.println(cycle_max);
-  }
-  /////////////////////////////////////////////////////////////// debug
+  //fsp_timer.set_duty_cycle(out, CHANNEL_B);   // D1==CHANNEL_A(==0), D0==CHANNEL_B(==1)
+  R_GPT4->GTCCR[3] = out;
 }
 
 //----------------------------------------------------------------------
@@ -102,7 +91,8 @@ void set_note(uint8_t ch, uint8_t notenum, uint8_t vel) {
       if(Unit[i].vel == 0) break;
     if(i == N_NOTE) return;       // 念のため
 
-    dx = dx_array[notenum - 24];  // note 0--23 は使わない
+    //dx = dx_array[notenum - 24];  // note 0--23 は使わない
+    dx = dx_array[notenum];  // note 0--23 は使わない
   //vel = vel_conv_array[vel];
     vel = vel >> 1;
   } else {        // ノートオフ
@@ -127,9 +117,8 @@ void play_score(void) {
   const uint8_t *p = Score;
   const uint8_t *pe = Score + sizeof(Score);
 
-  static int aaa=0; /////////////////////////////////////////// LED blink
   while (p < pe) {
-    digitalWrite(LED_BUILTIN, aaa = 1-aaa); /////////////////// LED blink
+    LED_BLINKER();
 
     while(0 < DeltaTime);           // DeltaTime待ち
 
@@ -145,28 +134,61 @@ void play_score(void) {
   }
 }
 
-void init_hard(void) {
-  fsp_timer.begin(TIMER_MODE_PWM, GPT_TIMER, 4, 256, 128, TIMER_SOURCE_DIV_1); // GTIOC4A,4B  48Mz/256=187.5kHz
-  fsp_timer.open();
+#define PRINT_REG(BUCKET, REGISTER) \
+  do { \
+    uint32_t t = BUCKET->REGISTER; \
+    char sbuf[128]; \
+    sprintf(sbuf, "%04X %04X ", unsigned(t>>16), unsigned(t&0xFFFF)); \
+    Serial.print(sbuf); \
+    Serial.println(#REGISTER); \
+  } while (false)
 
-    R_PFS->PORT[3].PIN[1].PmnPFS_b.PMR = 0;     //D0を汎用入出力に設定
-  //R_PFS->PORT[3].PIN[2].PmnPFS_b.PMR = 0;     //D1を汎用入出力に設定
-    R_PFS->PORT[3].PIN[1].PmnPFS_b.PSEL = 0x03; //D0をGPT端子として使用
-  //R_PFS->PORT[3].PIN[2].PmnPFS_b.PSEL = 0x03; //D1をGPT端子として使用
-    R_PFS->PORT[3].PIN[1].PmnPFS_b.PMR = 1;     //D0を周辺機能用の端子に設定
-  //R_PFS->PORT[3].PIN[2].PmnPFS_b.PMR = 1;     //D1を周辺機能用の端子に設定
-
-  //R_GPT4->GTIOR_b.GTIOA = 0x06;   //GTIOCA端子機能選択
-    R_GPT4->GTIOR_b.GTIOB = 0x19;   //GTIOCB端子機能選択
-  //R_GPT4->GTIOR_b.OAE = 1;        //GTIOCA端子出力許可
-    R_GPT4->GTIOR_b.OBE = 1;        //GTIOCB端子出力許可
-
-  fsp_timer.start();
-
-  AGTimer.init(INTERVAL_SAMPLING, timerCallback);
+void printRegisters(const char x[]) {
+  Serial.println(x);
+  PRINT_REG(R_GPT4, GTPR);
+  PRINT_REG(R_GPT4, GTPBR);
+  PRINT_REG(R_GPT4, GTCR);
+  PRINT_REG(R_GPT4, GTUDDTYC);
+  PRINT_REG(R_GPT4, GTIOR);
+  PRINT_REG(R_GPT4, GTCNT);
+  PRINT_REG(R_GPT4, GTCCR[3]);
+  PRINT_REG(R_GPT4, GTBER);
 }
 
-void note_off_all(void) {
+void init_hard(void) {
+//   R_MSTP->MSTPCRD_b.MSTPD6 = 0;  // モジュールストップコントロール, ストップ状態を解除
+// //  R_GPT4->GTPR = 255;
+// R_GPT4->GTPBR = 255;
+//   R_GPT4->GTIOR = 0x01090000;   // 周期の終わりでHigh, コンペアマッチでLow, GTIOCB端子出力許可
+//   R_GPT4->GTCCR[3] = 128;       // 中央値
+// R_GPT4->GTCCR[6] = 128;       // 中央値
+//   R_PFS->PORT[3].PIN[1].PmnPFS_b.PMR = 0;         // D0を汎用入出力に設定
+//   R_PFS->PORT[3].PIN[1].PmnPFS_b.PSEL = 0b00011;  // D0をGPT端子として使用
+//   R_PFS->PORT[3].PIN[1].PmnPFS_b.PMR = 1;         // D0を周辺機能用の端子に設定
+// R_GPT4->GTBER = 0x00150000;
+//   R_GPT4->GTCR = 1;             // カウント動作を実行, のこぎり波PWMモード, PCLKD/1
+
+
+printRegisters("initial");
+  fsp_timer.begin(TIMER_MODE_PWM, GPT_TIMER, 4, 256, 128, TIMER_SOURCE_DIV_1); // GTIOC4A,4B  48Mz/256=187.5kHz
+printRegisters("after begin");
+  fsp_timer.open();
+printRegisters("after open");
+
+  R_PFS->PORT[3].PIN[1].PmnPFS_b.PMR = 0;         // D0を汎用入出力に設定
+  R_PFS->PORT[3].PIN[1].PmnPFS_b.PSEL = 0b00011;  // D0をGPT端子として使用
+  R_PFS->PORT[3].PIN[1].PmnPFS_b.PMR = 1;         // D0を周辺機能用の端子に設定
+  R_GPT4->GTIOR_b.GTIOB = 0b01001;  // 周期の終わりでHigh, コンペアマッチでLow
+  R_GPT4->GTIOR_b.OBE = 1;          // GTIOCB端子出力許可
+R_GPT4->GTBER = 0x00150000;
+  R_GPT4->GTCR_b.CST = 1;  //fsp_timer.start();
+printRegisters("after start");
+// for(;;);
+
+  AGTimer.init(INTERVAL_MICRO_SEC, timerCallback);
+}
+
+void notes_off(void) {
   for (int i = 0; i < N_NOTE; i++) {
     Unit[i].vel = 0;
     Unit[i].dx  = 0;
@@ -176,17 +198,45 @@ void note_off_all(void) {
 }
 
 void setup() {
-  //Serial.begin(2000000); while(!Serial); Serial.println(); //// for debug
-  pinMode(LED_BUILTIN, OUTPUT); /////////////////////////////// LED blink
+  Serial.begin(2000000); while(!Serial); Serial.println();  // for debug
+  pinMode(LED_BUILTIN, OUTPUT);  // for LED
 
   init_hard();
-
   for(;;) {
     play_score();
-    note_off_all();
-    delay(500);
+    notes_off();
+    DeltaTime = 122; while(DeltaTime);  // 1 sec
   }
 }
 
-void loop() {
-}
+void loop() { }
+// EOF
+
+/*
+     34,    36,    38,    41,    43,    46,    48,    51,    54,    58,    61,    65,
+     69,    73,    77,    82,    86,    92,    97,   103,   109,   115,   122,   129,
+    137,   145,   154,   163,   173,   183,   194,   206,   218,   231,   244,   259,
+    274,   291,   308,   326,   346,   366,   388,   411,   435,   461,   489,   518,
+    549,   581,   616,   652,   691,   732,   776,   822,   871,   923,   978,  1036,
+   1097,  1163,  1232,  1305,  1383,  1465,  1552,  1644,  1742,  1845,  1955,  2071,
+   2195,  2325,  2463,  2610,  2765,  2930,  3104,  3288,  3484,  3691,  3910,  4143,
+   4389,  4650,  4927,  5220,  5530,  5859,  6207,  6577,  6968,  7382,  7821,  8286,
+   8779,  9301,  9854, 10440, 11060, 11718, 12415, 13153, 13935, 14764, 15642, 16572,
+  17557, 18601, 19707, 20879, 22121, 23436, 24830, 26306, 27871, 29528, 31284, 33144,
+
+
+## 1オクターブ分の音程データ(MIDIノート番号の108～119に対応, oct=9のド～シ)
+dxdata = [17557, 18601, 19708, 20879, 22121, 23436, 24830, 26306, 27871, 29528, 31284, 33144]
+dx_array = [0]*128
+
+def f(note) : return 8372*pow(2, (note-120)/12)
+def T(note) : return 1000000/f(note)
+def dx(note): return round(65536*32*2/T(note))
+for i in range(0, 128): dx_array[i] = dx(i)
+
+S = ''
+for note in range(128):
+	s = f'{dx_array[note]:5}, '
+	S += s
+	if note%12 == 11: print(S); S=''
+*/
