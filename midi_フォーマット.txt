@@ -1,0 +1,2 @@
+SMF(Standard MIDI File)フォーマット解説
+https://maruyama.breadfish.jp/tech/smf/
