@@ -1,2 +1,0 @@
-How can I increase the PWM frequency i.e. at PIN 6?
-https://forum.arduino.cc/t/how-can-i-increase-the-pwm-frequency-i-e-at-pin-6/1157614/10
