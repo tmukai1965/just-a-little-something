@@ -1,0 +1,41 @@
+非常に参考になった記事
+https://logikara.blog/raspi-pico-init/#mokuji_7-3
+ラズパイPico/PicoWの使い方を３つの開発環境Python、ArduinoIDE、PlatformIOで紹介
+
+New Project の後
+	Name: 任意
+	Boards: には「Raspberry Pi Pico」を選択すること
+			※「Pico(Raspberry Pi)」と「Pico W(Raspberry Pi)」も選択できるけどダメ
+	Framework: Arduino
+	Location: 任意
+
+platformio.ini を書き換える
+前)
+[env:pico]
+platform = raspberrypi
+board = pico
+framework = arduino
+
+後[picoW])
+[env:rpipicow]
+platform = https://github.com/maxgerhardt/platform-raspberrypi.git
+board = rpipicow
+framework = arduino
+board_build.core = earlephilhower
+
+後[pico])
+[env:pico]
+platform = https://github.com/maxgerhardt/platform-raspberrypi.git
+board = pico
+framework = arduino
+board_build.core = earlephilhower
+
+Platform Managerがエラーを吐いたらgitが入っていない可能性大
+https://git-scm.com/download
+ダウンロードしてインストール。特に設定はなく「NEXT」連打。結構時間かかるらしい。
+gitのインストール後はVSCode再起動(VSCode開いたままインストールしなきゃいけないのか？)
+
+スケッチの書込みができないとき。
+.pio/build/pico.... の firmware.uf2 を picoのドライブルートにコピー(BOOTボタン押しながらケーブル挿す)
+
+picoWのオンボードLEDはInfineon無線チップのIO (WL_GPIO0)で制御されているがいつも通りでOK
